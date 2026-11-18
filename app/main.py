@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from app.controllers import health
 from app.controllers.router import api_router
@@ -114,4 +115,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+def _misconfigured_app(missing: list[str]) -> FastAPI:
+    """Served instead of the real app when required settings are absent.
+
+    Serverless hosts turn a crash on import into an opaque 500 (FUNCTION_INVOCATION_FAILED).
+    This answers every request with the names (never the values) of the missing variables.
+    """
+    message = "Server is not configured. Missing environment variables: " + ", ".join(missing)
+    logger.error(message)
+    fallback = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+    @fallback.api_route(
+        "/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    )
+    async def _not_configured(path: str) -> JSONResponse:
+        return _error(503, message)
+
+    return fallback
+
+
+def build_app() -> FastAPI:
+    try:
+        return create_app()
+    except ValidationError as exc:
+        missing = sorted(
+            {str(err["loc"][0]).upper() for err in exc.errors() if err["type"] == "missing"}
+        )
+        if not missing:
+            raise
+        return _misconfigured_app(missing)
+
+
+app = build_app()
