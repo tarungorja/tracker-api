@@ -60,6 +60,7 @@ Everything except `/health*`, `/auth/otp/*`, `/auth/signout` and `/cron/*` requi
 | `POST /auth/otp/verify` | `verifyOtp` | body `{email, purpose, code}`; sets the session cookie, also returns `token` |
 | `POST /auth/signout` | `signOut` | idempotent; drops this device's push tokens |
 | `GET /auth/me` | `getCurrentUser` | |
+| `DELETE /auth/me` | — | permanently erases the account and all its data (medications, dose logs, wellness, notes, push tokens, reminders, OTPs, sessions); clears the cookie |
 | `GET /dashboard` | `getDashboardData` | home page |
 | `GET /today` | `getTodayData` | timeline |
 | `GET /statistics` | `getStatisticsData` | |

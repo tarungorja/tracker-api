@@ -81,10 +81,20 @@ class FakeMedications:
         ]
         return len(self.docs) < before
 
+    async def delete_all_for_user(self, user_id: str) -> int:
+        before = len(self.docs)
+        self.docs = [d for d in self.docs if str(d["userId"]) != str(user_id)]
+        return before - len(self.docs)
+
 
 class FakeDailyLogs:
     def __init__(self) -> None:
         self.rows: list[dict[str, Any]] = []
+
+    async def delete_all_for_user(self, user_id: str) -> int:
+        before = len(self.rows)
+        self.rows = [r for r in self.rows if r["userId"] != str(user_id)]
+        return before - len(self.rows)
 
     # ---- helpers for tests -----------------------------------------------------------------
 
@@ -243,6 +253,13 @@ class FakeUsers:
         self.docs[email] = {"_id": f"user{next(_ids)}", "email": email}
         return self.docs[email]
 
+    async def delete(self, user_id: str) -> bool:
+        found = await self.find_by_id(user_id)
+        if found is None:
+            return False
+        del self.docs[found["email"]]
+        return True
+
 
 class FakeOtps:
     def __init__(self) -> None:
@@ -267,6 +284,9 @@ class FakeOtps:
 
     async def delete(self, email: str, purpose: str) -> None:
         self.docs.pop((email, purpose), None)
+
+    async def delete_for_email(self, email: str) -> None:
+        self.docs = {k: v for k, v in self.docs.items() if k[0] != email}
 
     async def delete_by_id(self, otp_id: str) -> None:
         self.docs = {k: v for k, v in self.docs.items() if v["_id"] != otp_id}
@@ -310,6 +330,11 @@ class FakeSessions:
             self.docs.remove(found)
         return found
 
+    async def delete_all_for_user(self, user_id: str) -> int:
+        before = len(self.docs)
+        self.docs = [s for s in self.docs if s["userId"] != user_id]
+        return before - len(self.docs)
+
     async def active_ids_for_user(self, user_id: str) -> list[str]:
         now = datetime.now(UTC)
         return [s["_id"] for s in self.docs if s["userId"] == user_id and s["expiresAt"] > now]
@@ -322,6 +347,11 @@ class FakePushTokens:
 
     async def delete_by_session(self, session_id: str) -> None:
         self.deleted_sessions.append(session_id)
+
+    async def delete_all_for_user(self, user_id: str) -> int:
+        removed = self.user_ids.count(user_id)
+        self.user_ids = [u for u in self.user_ids if u != user_id]
+        return removed
 
     async def distinct_user_ids(self) -> list[str]:
         return self.user_ids
@@ -351,6 +381,11 @@ class FakeRemindersSent:
             return False
         self.claimed.add(key)
         return True
+
+    async def delete_all_for_user(self, user_id: str) -> int:
+        mine = {c for c in self.claimed if c[0] == str(user_id)}
+        self.claimed -= mine
+        return len(mine)
 
     async def release(self, user_id: str, date: str, time: str, names: Any) -> None:
         for name in names:

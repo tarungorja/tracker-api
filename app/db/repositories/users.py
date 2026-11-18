@@ -24,3 +24,7 @@ class UserRepository:
         doc = {"email": email, **created_stamps(now())}
         result = await self._col.insert_one(doc)
         return {**doc, "_id": result.inserted_id}
+
+    async def delete(self, user_id: str | ObjectId) -> bool:
+        result = await self._col.delete_one({"_id": as_object_id(user_id)})
+        return result.deleted_count > 0

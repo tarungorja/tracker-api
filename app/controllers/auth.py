@@ -1,6 +1,12 @@
 from fastapi import APIRouter, Request, Response
 
-from app.dependencies import AuthServiceDep, CurrentUser, SettingsDep, extract_session_token
+from app.dependencies import (
+    AccountServiceDep,
+    AuthServiceDep,
+    CurrentUser,
+    SettingsDep,
+    extract_session_token,
+)
 from app.schemas.auth import OtpRequestInput, OtpVerifyInput, UserView, VerifyOtpResponse
 from app.schemas.common import OkResponse
 
@@ -40,6 +46,28 @@ async def verify_otp(
 @router.get("/me", response_model=UserView, summary="The signed-in user")
 async def me(user: CurrentUser) -> UserView:
     return UserView(id=user.id, email=user.email)
+
+
+@router.delete(
+    "/me",
+    response_model=OkResponse,
+    summary="Permanently delete the account and all of its data",
+)
+async def delete_account(
+    response: Response,
+    user: CurrentUser,
+    service: AccountServiceDep,
+    settings: SettingsDep,
+) -> OkResponse:
+    await service.delete_account(user.id, user.email)
+    response.delete_cookie(
+        settings.session_cookie_name,
+        path="/",
+        httponly=True,
+        samesite=settings.cookie_samesite,
+        secure=settings.secure_cookies,
+    )
+    return OkResponse()
 
 
 @router.post("/signout", response_model=OkResponse, summary="End this device's session")

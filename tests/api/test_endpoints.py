@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from app import dependencies as deps
 from app.core.config import get_settings
 from app.main import create_app
+from app.services.account_service import AccountService
 from app.services.auth_service import AuthService, AuthUser
 from app.services.dashboard_service import DashboardService
 from app.services.dose_service import DoseService
@@ -54,9 +55,12 @@ class World:
         self.logs = FakeDailyLogs()
         self.schedule = ScheduleService(self.meds, self.logs)
         self.users, self.sessions, self.email = FakeUsers(), FakeSessions(), FakeEmail()
+        self.otps = FakeOtps()
+        self.account_tokens = FakePushTokens(["u1"])
+        self.reminders_sent = FakeRemindersSent()
         self.auth = AuthService(
             self.users,
-            FakeOtps(),
+            self.otps,
             self.sessions,
             FakePushTokens(),
             self.email,
@@ -78,6 +82,15 @@ class World:
         o[deps.get_dashboard_service] = lambda: DashboardService(self.schedule)
         o[deps.get_statistics_service] = lambda: StatisticsService(self.logs, self.schedule)
         o[deps.get_wellness_service] = lambda: WellnessService(self.logs)
+        o[deps.get_account_service] = lambda: AccountService(
+            self.users,
+            self.sessions,
+            self.otps,
+            self.account_tokens,
+            self.meds,
+            self.logs,
+            self.reminders_sent,
+        )
         o[deps.get_push_service] = lambda: self.push
         o[deps.get_reminder_service] = lambda: self.reminder
         if signed_in:
@@ -345,3 +358,35 @@ def test_auth_errors_have_the_expected_status_and_message(anon, world):
 
 def test_signout_without_a_session_is_harmless(anon):
     assert anon.post("/api/v1/auth/signout").json() == {"ok": True}
+
+
+def test_delete_account_erases_all_user_data_and_signs_out(anon, world):
+    anon.post("/api/v1/auth/otp/request", json={"email": "me@example.com", "purpose": "signup"})
+    code = world.email.sent[-1][1]
+    verify = anon.post(
+        "/api/v1/auth/otp/verify",
+        json={"email": "me@example.com", "purpose": "signup", "code": code},
+    )
+    user_id = verify.json()["user"]["id"]
+
+    # Data owned by this user, plus another user's data that must survive.
+    world.meds.docs.append(med_doc(user_id, "Minoxidil", ["8:00 AM"]))
+    world.logs.add_dose(user_id, "2026-01-01", "Minoxidil", "8:00 AM")
+    world.logs.add_dose("someone-else", "2026-01-01", "Biotin", "8:00 AM")
+    world.account_tokens.user_ids.append(user_id)
+
+    out = anon.delete("/api/v1/auth/me")
+    assert out.status_code == 200 and out.json() == {"ok": True}
+    assert 'session=""' in out.headers["set-cookie"] or "Max-Age=0" in out.headers["set-cookie"]
+
+    assert not [d for d in world.meds.docs if d["userId"] == user_id]
+    assert [r["userId"] for r in world.logs.rows] == ["someone-else"]
+    assert user_id not in world.account_tokens.user_ids
+    assert "u1" in world.account_tokens.user_ids  # untouched
+    assert "me@example.com" not in world.users.docs
+    assert world.sessions.docs == []
+    assert anon.get("/api/v1/auth/me").status_code == 401  # the old session is dead
+
+
+def test_delete_account_requires_a_session(anon):
+    assert anon.delete("/api/v1/auth/me").status_code == 401

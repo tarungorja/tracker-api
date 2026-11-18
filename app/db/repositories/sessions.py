@@ -32,3 +32,8 @@ class SessionRepository:
             {"userId": as_object_id(user_id), "expiresAt": {"$gt": now()}}, {"_id": 1}
         )
         return [doc["_id"] async for doc in cursor]
+
+    async def delete_all_for_user(self, user_id: str | ObjectId) -> int:
+        """Signs the user out everywhere."""
+        result = await self._col.delete_many({"userId": as_object_id(user_id)})
+        return result.deleted_count

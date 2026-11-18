@@ -72,3 +72,7 @@ class PushTokenRepository:
             {"token": 1},
         ).to_list(None)
         return list(dict.fromkeys(d["token"] for d in docs))
+
+    async def delete_all_for_user(self, user_id: str | ObjectId) -> int:
+        result = await self._col.delete_many({"userId": as_object_id(user_id)})
+        return result.deleted_count

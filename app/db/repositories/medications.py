@@ -46,3 +46,8 @@ class MedicationRepository:
             {"_id": as_object_id(medication_id), "userId": as_object_id(user_id)}
         )
         return result.deleted_count > 0
+
+    async def delete_all_for_user(self, user_id: str | ObjectId) -> int:
+        """Account deletion: removes every medication the user owns."""
+        result = await self._col.delete_many({"userId": as_object_id(user_id)})
+        return result.deleted_count

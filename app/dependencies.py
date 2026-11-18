@@ -21,6 +21,7 @@ from app.db.repositories import (
 )
 from app.integrations.email import BrevoEmailClient
 from app.integrations.fcm import FcmClient
+from app.services.account_service import AccountService
 from app.services.auth_service import AuthService, AuthUser
 from app.services.dashboard_service import DashboardService
 from app.services.dose_service import DoseService
@@ -59,6 +60,18 @@ def get_auth_service(db: DbDep, settings: SettingsDep) -> AuthService:
         PushTokenRepository(db),
         BrevoEmailClient(settings),
         settings,
+    )
+
+
+def get_account_service(db: DbDep) -> AccountService:
+    return AccountService(
+        UserRepository(db),
+        SessionRepository(db),
+        OtpRepository(db),
+        PushTokenRepository(db),
+        MedicationRepository(db),
+        DailyLogRepository(db),
+        ReminderSentRepository(db),
     )
 
 
@@ -111,6 +124,7 @@ def get_reminder_service(db: DbDep, push: PushServiceDep) -> ReminderService:
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]
 MedicationServiceDep = Annotated[MedicationService, Depends(get_medication_service)]
 DoseServiceDep = Annotated[DoseService, Depends(get_dose_service)]
 DashboardServiceDep = Annotated[DashboardService, Depends(get_dashboard_service)]

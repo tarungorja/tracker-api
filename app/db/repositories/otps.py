@@ -60,3 +60,7 @@ class OtpRepository:
     async def consume(self, otp_id: ObjectId) -> bool:
         """Atomically deletes the OTP. False means another request already consumed it."""
         return await self._col.find_one_and_delete({"_id": otp_id}) is not None
+
+    async def delete_for_email(self, email: str) -> None:
+        """Drops any pending sign-in/sign-up codes for this address."""
+        await self._col.delete_many({"email": email})

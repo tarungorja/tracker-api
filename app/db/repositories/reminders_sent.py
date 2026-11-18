@@ -45,3 +45,7 @@ class ReminderSentRepository:
                 "medicationName": {"$in": list(medication_names)},
             }
         )
+
+    async def delete_all_for_user(self, user_id: str | ObjectId) -> int:
+        result = await self._col.delete_many({"userId": as_object_id(user_id)})
+        return result.deleted_count
