@@ -32,8 +32,16 @@ async def disconnect() -> None:
 
 
 def get_database() -> AsyncDatabase:
+    """The shared database handle, connecting on first use.
+
+    Normally connect() runs at startup, but serverless hosts (e.g. Vercel) may not run the
+    lifespan hook, so the first request connects lazily instead of failing.
+    """
     if _database is None:
-        raise RuntimeError("Database is not connected. Call connect() on startup.")
+        from app.core.config import get_settings
+
+        connect(get_settings())
+    assert _database is not None
     return _database
 
 

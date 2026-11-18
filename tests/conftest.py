@@ -3,6 +3,7 @@ import os
 # Must be set before the app (and its cached settings) are imported.
 os.environ.update(
     {
+        "ENV_FILE": "does-not-exist.env",  # never read the developer's real .env
         "ENVIRONMENT": "test",
         "MONGODB_URI": "mongodb://localhost:27017/health_test",
         "AUTH_SECRET": "test-secret",

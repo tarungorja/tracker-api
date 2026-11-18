@@ -1,3 +1,4 @@
+import os
 from datetime import timedelta
 from functools import lru_cache
 from typing import Literal
@@ -6,7 +7,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    # ENV_FILE lets a deployment or the test-suite pick another file (or none) than ./.env.
+    model_config = SettingsConfigDict(
+        env_file=os.environ.get("ENV_FILE", ".env"), env_file_encoding="utf-8", extra="ignore"
+    )
 
     app_name: str = "Hair Health Tracker"
     environment: Literal["development", "production", "test"] = "development"

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -75,7 +76,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 logger.exception("Could not verify MongoDB indexes; continuing")
         stop = asyncio.Event()
         reminder_task: asyncio.Task[None] | None = None
-        if settings.reminder_timer_enabled:
+        # A timer can't run on serverless hosts (the function is frozen between requests); there
+        # an external scheduler must call /api/v1/cron/send-reminders instead.
+        on_vercel = bool(os.environ.get("VERCEL"))
+        if on_vercel and settings.reminder_timer_enabled:
+            logger.info("Running on Vercel: reminder timer disabled, use the cron endpoint")
+        if settings.reminder_timer_enabled and not on_vercel:
             reminder_task = asyncio.create_task(
                 reminder_loop(_send_due_reminders, settings.reminder_interval_seconds, stop)
             )
