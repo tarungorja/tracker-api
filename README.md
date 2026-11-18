@@ -38,7 +38,9 @@ copy .env.example .env                    # then fill in values
 .venv\Scripts\uvicorn app.main:app --reload --port 8000
 ```
 
-Interactive docs: <http://localhost:8000/docs> (disabled when `ENVIRONMENT=production`).
+Interactive docs: <http://localhost:8000/docs>, available in every environment including production.
+Every data endpoint still needs a session; use the **Authorize** button with the `token` returned
+by `POST /api/v1/auth/otp/verify`.
 
 ```powershell
 .venv\Scripts\python -m scripts.migrate_user_scope   # one-off index migration
