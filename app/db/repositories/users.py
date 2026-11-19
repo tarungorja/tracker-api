@@ -19,6 +19,9 @@ class UserRepository:
     async def find_by_id(self, user_id: str | ObjectId) -> dict[str, Any] | None:
         return await self._col.find_one({"_id": as_object_id(user_id)})
 
+    async def find_by_ids(self, user_ids: list[ObjectId]) -> list[dict[str, Any]]:
+        return await self._col.find({"_id": {"$in": user_ids}}, {"email": 1}).to_list(None)
+
     async def create(self, email: str) -> dict[str, Any]:
         """Raises DuplicateKeyError when the email is already registered."""
         doc = {"email": email, **created_stamps(now())}

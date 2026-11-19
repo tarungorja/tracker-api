@@ -12,7 +12,7 @@ class Settings(BaseSettings):
         env_file=os.environ.get("ENV_FILE", ".env"), env_file_encoding="utf-8", extra="ignore"
     )
 
-    app_name: str = "Hair Health Tracker"
+    app_name: str = "Medication Tracker"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api/v1"
 

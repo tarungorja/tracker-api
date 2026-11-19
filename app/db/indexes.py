@@ -8,6 +8,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 logger = logging.getLogger(__name__)
 
 _THREE_DAYS = 3 * 24 * 60 * 60
+_THIRTY_DAYS = 30 * 24 * 60 * 60
 
 
 async def ensure_indexes(db: AsyncDatabase) -> None:
@@ -49,4 +50,18 @@ async def ensure_indexes(db: AsyncDatabase) -> None:
         unique=True,
     )
     await db.remindersents.create_index([("createdAt", ASCENDING)], expireAfterSeconds=_THREE_DAYS)
+
+    await db.caregiverlinks.create_index(
+        [("caregiverId", ASCENDING), ("patientId", ASCENDING)], unique=True
+    )
+    await db.caregiverlinks.create_index([("patientId", ASCENDING)])
+
+    await db.invitecodes.create_index([("codeHash", ASCENDING)], unique=True)
+    await db.invitecodes.create_index([("patientId", ASCENDING)], unique=True)
+    await db.invitecodes.create_index([("expiresAt", ASCENDING)], expireAfterSeconds=0)
+
+    await db.medicationactivities.create_index([("userId", ASCENDING), ("createdAt", -1)])
+    await db.medicationactivities.create_index(
+        [("createdAt", ASCENDING)], expireAfterSeconds=_THIRTY_DAYS
+    )
     logger.info("MongoDB indexes verified")

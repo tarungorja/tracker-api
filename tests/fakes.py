@@ -253,6 +253,10 @@ class FakeUsers:
         self.docs[email] = {"_id": f"user{next(_ids)}", "email": email}
         return self.docs[email]
 
+    async def find_by_ids(self, user_ids: list[Any]) -> list[dict[str, Any]]:
+        wanted = {str(u) for u in user_ids}
+        return [u for u in self.docs.values() if u["_id"] in wanted]
+
     async def delete(self, user_id: str) -> bool:
         found = await self.find_by_id(user_id)
         if found is None:
@@ -361,11 +365,24 @@ class FakeEmail:
     def __init__(self, fail: bool = False) -> None:
         self.fail = fail
         self.sent: list[tuple[str, str, str]] = []
+        self.reports: list[tuple[str, str, str, str, tuple[str, bytes] | None]] = []
 
     async def send_otp(self, to: str, code: str, purpose: str) -> None:
         if self.fail:
             raise EmailDeliveryError("Email provider error: boom")
         self.sent.append((to, code, purpose))
+
+    async def send_report(
+        self,
+        to: str,
+        subject: str,
+        html: str,
+        text: str,
+        attachment: tuple[str, bytes] | None = None,
+    ) -> None:
+        if self.fail:
+            raise EmailDeliveryError("Email provider error: boom")
+        self.reports.append((to, subject, html, text, attachment))
 
 
 # ---- reminders -----------------------------------------------------------------------------
@@ -400,3 +417,116 @@ class FakePush:
     async def send_to_user(self, user_id: str, payload: Any) -> PushSendResult:
         self.calls.append((str(user_id), payload))
         return self.result
+
+
+# ---- family sharing ------------------------------------------------------------------------
+
+
+class FakeActivity:
+    def __init__(self) -> None:
+        self.rows: list[dict[str, Any]] = []
+
+    async def record(self, user_id: str, action: str, medication_name: str) -> None:
+        self.rows.append(
+            {
+                "userId": str(user_id),
+                "action": action,
+                "medicationName": medication_name,
+                "createdAt": datetime.now(UTC),
+            }
+        )
+
+    async def recent(self, user_id: str, limit: int) -> list[dict[str, Any]]:
+        mine = [r for r in self.rows if r["userId"] == str(user_id)]
+        return list(reversed(mine))[:limit]
+
+    async def delete_all_for_user(self, user_id: str) -> int:
+        before = len(self.rows)
+        self.rows = [r for r in self.rows if r["userId"] != str(user_id)]
+        return before - len(self.rows)
+
+
+class FakeInvites:
+    def __init__(self) -> None:
+        self.docs: dict[str, dict[str, Any]] = {}  # patientId -> doc
+
+    async def replace_for_patient(
+        self, patient_id: str, code_hash: str, expires_at: datetime
+    ) -> None:
+        self.docs[str(patient_id)] = {
+            "patientId": str(patient_id),
+            "codeHash": code_hash,
+            "expiresAt": expires_at,
+        }
+
+    async def consume(self, code_hash: str) -> dict[str, Any] | None:
+        for pid, doc in list(self.docs.items()):
+            if doc["codeHash"] == code_hash and doc["expiresAt"] > datetime.now(UTC):
+                del self.docs[pid]
+                return doc
+        return None
+
+    async def delete_all_for_user(self, user_id: str) -> int:
+        return 1 if self.docs.pop(str(user_id), None) else 0
+
+
+class FakeLinks:
+    def __init__(self) -> None:
+        self.docs: list[dict[str, Any]] = []
+
+    def _find(self, caregiver_id: str, patient_id: str) -> dict[str, Any] | None:
+        return next(
+            (
+                d
+                for d in self.docs
+                if d["caregiverId"] == str(caregiver_id) and d["patientId"] == str(patient_id)
+            ),
+            None,
+        )
+
+    async def create(self, caregiver_id: str, patient_id: str) -> None:
+        if not self._find(caregiver_id, patient_id):
+            self.docs.append(
+                {
+                    "caregiverId": str(caregiver_id),
+                    "patientId": str(patient_id),
+                    "createdAt": datetime.now(UTC),
+                }
+            )
+
+    async def find(self, caregiver_id: str, patient_id: str) -> dict[str, Any] | None:
+        return self._find(caregiver_id, patient_id)
+
+    async def list_for_caregiver(self, caregiver_id: str) -> list[dict[str, Any]]:
+        return [d for d in self.docs if d["caregiverId"] == str(caregiver_id)]
+
+    async def list_for_patient(self, patient_id: str) -> list[dict[str, Any]]:
+        return [d for d in self.docs if d["patientId"] == str(patient_id)]
+
+    async def delete(self, caregiver_id: str, patient_id: str) -> bool:
+        found = self._find(caregiver_id, patient_id)
+        if found:
+            self.docs.remove(found)
+        return found is not None
+
+    async def claim_reminder(
+        self, caregiver_id: str, patient_id: str, cutoff: datetime, moment: datetime
+    ) -> bool:
+        link = self._find(caregiver_id, patient_id)
+        if link is None:
+            return False
+        last = link.get("lastRemindedAt")
+        if last is not None and last > cutoff:
+            return False
+        link["lastRemindedAt"] = moment
+        return True
+
+    async def release_reminder(self, caregiver_id: str, patient_id: str, moment: datetime) -> None:
+        link = self._find(caregiver_id, patient_id)
+        if link and link.get("lastRemindedAt") == moment:
+            link["lastRemindedAt"] = None
+
+    async def delete_all_for_user(self, user_id: str) -> int:
+        before = len(self.docs)
+        self.docs = [d for d in self.docs if str(user_id) not in (d["caregiverId"], d["patientId"])]
+        return before - len(self.docs)

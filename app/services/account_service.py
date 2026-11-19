@@ -2,7 +2,10 @@ import logging
 
 from app.core.exceptions import NotFoundError
 from app.db.repositories import (
+    CaregiverLinkRepository,
     DailyLogRepository,
+    InviteCodeRepository,
+    MedicationActivityRepository,
     MedicationRepository,
     OtpRepository,
     PushTokenRepository,
@@ -26,6 +29,9 @@ class AccountService:
         medications: MedicationRepository,
         daily_logs: DailyLogRepository,
         reminders_sent: ReminderSentRepository,
+        caregiver_links: CaregiverLinkRepository,
+        invite_codes: InviteCodeRepository,
+        medication_activity: MedicationActivityRepository,
     ) -> None:
         self._users = users
         self._sessions = sessions
@@ -34,6 +40,9 @@ class AccountService:
         self._medications = medications
         self._daily_logs = daily_logs
         self._reminders_sent = reminders_sent
+        self._caregiver_links = caregiver_links
+        self._invite_codes = invite_codes
+        self._medication_activity = medication_activity
 
     async def delete_account(self, user_id: str, email: str) -> None:
         """Removes the user and everything they own.
@@ -44,6 +53,9 @@ class AccountService:
         await self._medications.delete_all_for_user(user_id)
         await self._daily_logs.delete_all_for_user(user_id)  # dose logs, wellness counts, notes
         await self._reminders_sent.delete_all_for_user(user_id)
+        await self._medication_activity.delete_all_for_user(user_id)
+        await self._invite_codes.delete_all_for_user(user_id)
+        await self._caregiver_links.delete_all_for_user(user_id)  # as follower and as followed
         await self._push_tokens.delete_all_for_user(user_id)
         await self._otps.delete_for_email(email)
         if not await self._users.delete(user_id):

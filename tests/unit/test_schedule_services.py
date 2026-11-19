@@ -15,7 +15,7 @@ from app.services.schedule_service import ScheduleService
 from app.services.statistics_service import StatisticsService
 from app.services.today_service import TodayService
 from app.services.wellness_service import WellnessService
-from tests.fakes import FakeDailyLogs, FakeMedications, med_doc
+from tests.fakes import FakeActivity, FakeDailyLogs, FakeMedications, med_doc
 
 # Wednesday 2026-01-07, 10:00 IST (04:30 UTC).
 NOW = datetime(2026, 1, 7, 4, 30, tzinfo=UTC)
@@ -96,7 +96,7 @@ def test_dashboard_progress_rounds_half_up_like_javascript():
 
 def test_medications_page_history_and_today(world):
     meds, logs, schedule = world
-    data = run(MedicationService(meds, logs, schedule).page_data(USER, NOW))
+    data = run(MedicationService(meds, logs, schedule, FakeActivity()).page_data(USER, NOW))
 
     by_name = {m.name: m for m in data.medications}
     assert list(by_name) == ["Biotin", "Minoxidil", "Paused", "Weekend"]  # includes paused
@@ -119,7 +119,7 @@ def test_medications_page_history_and_today(world):
 
 def test_medication_create_normalizes_and_rejects_duplicates(world):
     meds, logs, schedule = world
-    service = MedicationService(meds, logs, schedule)
+    service = MedicationService(meds, logs, schedule, FakeActivity())
     body = MedicationInput(
         name="Vitamin D",
         schedule_times=["14:00", "2:00 PM", "08:05"],
@@ -136,7 +136,7 @@ def test_medication_create_normalizes_and_rejects_duplicates(world):
 
 def test_medication_update_toggle_delete_and_not_found(world):
     meds, logs, schedule = world
-    service = MedicationService(meds, logs, schedule)
+    service = MedicationService(meds, logs, schedule, FakeActivity())
     biotin = next(d for d in meds.docs if d["name"] == "Biotin")
 
     off = run(service.set_enabled(USER, biotin["_id"], False))

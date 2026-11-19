@@ -1,6 +1,6 @@
-# Hair Health Tracker API
+# Medication Tracker API
 
-FastAPI backend for the Hair Health Tracker UI. It replaces the Next.js server actions and
+FastAPI backend for the Medication Tracker UI. It replaces the Next.js server actions and
 route handlers with a REST API, and uses the **same MongoDB database, collections, OTP hashing
 and session format**, so existing accounts and data keep working.
 
@@ -78,6 +78,14 @@ Everything except `/health*`, `/auth/otp/*`, `/auth/signout` and `/cron/*` requi
 | `POST /push/tokens` | `savePushToken` | body `{token, userAgent?}` |
 | `DELETE /push/tokens` | `removePushToken` | body `{token}` |
 | `POST /push/test` | `sendTestNotification` | |
+| `POST /family/invite` | - | the followed person (father) creates a one-time code, valid 24 h; a new code replaces the old one |
+| `POST /family/connect` | - | body `{code}`; the follower (son) connects, single-use code |
+| `GET /family/patients` / `GET /family/caregivers` | - | accounts I follow / people who follow me |
+| `DELETE /family/patients/{id}` / `DELETE /family/caregivers/{id}` | - | stop following / revoke someone's access |
+| `POST /reports/send` | - | body `{period: "last7"}`; emails the signed-in user a 7-day adherence report (HTML body + PDF attached), 1 per minute |
+| `GET /reports/download?period=last7` | - | the same report as a PDF download |
+| `GET /family/patients/{id}/overview` | - | read-only dashboard, missed doses, medication change log |
+| `POST /family/patients/{id}/remind` | - | pushes a missed-dose notification; `409` unless a dose was missed, `429` within 5 min of the last one |
 | `GET`/`POST /cron/send-reminders` | `/api/cron/send-reminders` | `Authorization: Bearer $CRON_SECRET`; call every minute |
 | `GET /health`, `GET /health/ready` | — | liveness / readiness (pings MongoDB) |
 

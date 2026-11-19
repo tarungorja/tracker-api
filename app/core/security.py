@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import secrets
 
-from app.core.constants import OTP_LENGTH
+from app.core.constants import INVITE_CODE_ALPHABET, INVITE_CODE_LENGTH, OTP_LENGTH
 
 
 def generate_session_token() -> str:
@@ -30,3 +30,13 @@ def verify_otp_hash(secret: str, email: str, code: str, expected_hash: str) -> b
 
 def secrets_match(actual: str, expected: str) -> bool:
     return hmac.compare_digest(actual.encode(), expected.encode())
+
+
+def generate_invite_code() -> str:
+    """A short single-use code like "K7QM2XPD", from an alphabet without look-alike characters."""
+    return "".join(secrets.choice(INVITE_CODE_ALPHABET) for _ in range(INVITE_CODE_LENGTH))
+
+
+def normalize_invite_code(raw: str) -> str:
+    """Accepts "k7qm-2xpd", "K7QM 2XPD", etc."""
+    return "".join(ch for ch in raw.upper() if ch.isalnum())

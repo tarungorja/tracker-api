@@ -11,7 +11,10 @@ from app.core.exceptions import UnauthorizedError
 from app.core.security import secrets_match
 from app.db import mongo
 from app.db.repositories import (
+    CaregiverLinkRepository,
     DailyLogRepository,
+    InviteCodeRepository,
+    MedicationActivityRepository,
     MedicationRepository,
     OtpRepository,
     PushTokenRepository,
@@ -25,9 +28,11 @@ from app.services.account_service import AccountService
 from app.services.auth_service import AuthService, AuthUser
 from app.services.dashboard_service import DashboardService
 from app.services.dose_service import DoseService
+from app.services.family_service import FamilyService
 from app.services.medication_service import MedicationService
 from app.services.push_service import PushService
 from app.services.reminder_service import ReminderService
+from app.services.report_service import ReportService
 from app.services.schedule_service import ScheduleService
 from app.services.statistics_service import StatisticsService
 from app.services.today_service import TodayService
@@ -72,6 +77,9 @@ def get_account_service(db: DbDep) -> AccountService:
         MedicationRepository(db),
         DailyLogRepository(db),
         ReminderSentRepository(db),
+        CaregiverLinkRepository(db),
+        InviteCodeRepository(db),
+        MedicationActivityRepository(db),
     )
 
 
@@ -83,7 +91,12 @@ ScheduleServiceDep = Annotated[ScheduleService, Depends(get_schedule_service)]
 
 
 def get_medication_service(db: DbDep, schedule: ScheduleServiceDep) -> MedicationService:
-    return MedicationService(MedicationRepository(db), DailyLogRepository(db), schedule)
+    return MedicationService(
+        MedicationRepository(db),
+        DailyLogRepository(db),
+        schedule,
+        MedicationActivityRepository(db),
+    )
 
 
 def get_dose_service(db: DbDep) -> DoseService:
@@ -92,6 +105,9 @@ def get_dose_service(db: DbDep) -> DoseService:
 
 def get_dashboard_service(schedule: ScheduleServiceDep) -> DashboardService:
     return DashboardService(schedule)
+
+
+DashboardServiceDep = Annotated[DashboardService, Depends(get_dashboard_service)]
 
 
 def get_today_service(schedule: ScheduleServiceDep) -> TodayService:
@@ -106,11 +122,32 @@ def get_wellness_service(db: DbDep) -> WellnessService:
     return WellnessService(DailyLogRepository(db))
 
 
+def get_report_service(
+    db: DbDep, settings: SettingsDep, schedule: ScheduleServiceDep
+) -> ReportService:
+    return ReportService(
+        DailyLogRepository(db), schedule, BrevoEmailClient(settings), settings.app_name
+    )
+
+
 def get_push_service(db: DbDep) -> PushService:
     return PushService(PushTokenRepository(db), SessionRepository(db), _fcm_client())
 
 
 PushServiceDep = Annotated[PushService, Depends(get_push_service)]
+
+
+def get_family_service(
+    db: DbDep, dashboard: DashboardServiceDep, push: PushServiceDep
+) -> FamilyService:
+    return FamilyService(
+        UserRepository(db),
+        CaregiverLinkRepository(db),
+        InviteCodeRepository(db),
+        MedicationActivityRepository(db),
+        dashboard,
+        push,
+    )
 
 
 def get_reminder_service(db: DbDep, push: PushServiceDep) -> ReminderService:
@@ -127,10 +164,11 @@ AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]
 MedicationServiceDep = Annotated[MedicationService, Depends(get_medication_service)]
 DoseServiceDep = Annotated[DoseService, Depends(get_dose_service)]
-DashboardServiceDep = Annotated[DashboardService, Depends(get_dashboard_service)]
 TodayServiceDep = Annotated[TodayService, Depends(get_today_service)]
 StatisticsServiceDep = Annotated[StatisticsService, Depends(get_statistics_service)]
 WellnessServiceDep = Annotated[WellnessService, Depends(get_wellness_service)]
+FamilyServiceDep = Annotated[FamilyService, Depends(get_family_service)]
+ReportServiceDep = Annotated[ReportService, Depends(get_report_service)]
 ReminderServiceDep = Annotated[ReminderService, Depends(get_reminder_service)]
 
 

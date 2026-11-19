@@ -12,13 +12,17 @@ from app.services.dashboard_service import DashboardService
 from app.services.dose_service import DoseService
 from app.services.medication_service import MedicationService
 from app.services.reminder_service import ReminderService
+from app.services.report_service import ReportService
 from app.services.schedule_service import ScheduleService
 from app.services.statistics_service import StatisticsService
 from app.services.today_service import TodayService
 from app.services.wellness_service import WellnessService
 from tests.fakes import (
+    FakeActivity,
     FakeDailyLogs,
     FakeEmail,
+    FakeInvites,
+    FakeLinks,
     FakeMedications,
     FakeOtps,
     FakePush,
@@ -75,7 +79,7 @@ class World:
         o = app.dependency_overrides
         o[deps.get_auth_service] = lambda: self.auth
         o[deps.get_medication_service] = lambda: MedicationService(
-            self.meds, self.logs, self.schedule
+            self.meds, self.logs, self.schedule, FakeActivity()
         )
         o[deps.get_dose_service] = lambda: DoseService(self.logs)
         o[deps.get_today_service] = lambda: TodayService(self.schedule)
@@ -90,6 +94,12 @@ class World:
             self.meds,
             self.logs,
             self.reminders_sent,
+            FakeLinks(),
+            FakeInvites(),
+            FakeActivity(),
+        )
+        o[deps.get_report_service] = lambda: ReportService(
+            self.logs, self.schedule, self.email, "Medication Tracker", {}
         )
         o[deps.get_push_service] = lambda: self.push
         o[deps.get_reminder_service] = lambda: self.reminder
@@ -390,3 +400,30 @@ def test_delete_account_erases_all_user_data_and_signs_out(anon, world):
 
 def test_delete_account_requires_a_session(anon):
     assert anon.delete("/api/v1/auth/me").status_code == 401
+
+
+# ---- reports -------------------------------------------------------------------------------
+
+
+def test_report_download_is_a_pdf_attachment(api):
+    response = api.get("/api/v1/reports/download")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["content-disposition"].startswith(
+        'attachment; filename="medication-report-'
+    )
+    assert response.content.startswith(b"%PDF")
+
+
+def test_report_send_emails_the_signed_in_user(api, world):
+    response = api.post("/api/v1/reports/send", json={"period": "last7"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["email"] == "me@example.com" and {"startDate", "endDate"} <= set(body)
+    assert world.email.reports[0][0] == "me@example.com"
+
+
+def test_report_rejects_unknown_periods_and_needs_a_session(api, anon):
+    assert api.post("/api/v1/reports/send", json={"period": "custom"}).status_code == 422
+    assert anon.get("/api/v1/reports/download").status_code == 401
+    assert anon.post("/api/v1/reports/send", json={}).status_code == 401

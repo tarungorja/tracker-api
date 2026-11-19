@@ -1,4 +1,7 @@
+from app.db.repositories.caregiver_links import CaregiverLinkRepository
 from app.db.repositories.daily_logs import DailyLogRepository
+from app.db.repositories.invite_codes import InviteCodeRepository
+from app.db.repositories.medication_activity import MedicationActivityRepository
 from app.db.repositories.medications import MedicationRepository
 from app.db.repositories.otps import OtpRepository
 from app.db.repositories.push_tokens import PushTokenRepository
@@ -7,7 +10,10 @@ from app.db.repositories.sessions import SessionRepository
 from app.db.repositories.users import UserRepository
 
 __all__ = [
+    "CaregiverLinkRepository",
     "DailyLogRepository",
+    "InviteCodeRepository",
+    "MedicationActivityRepository",
     "MedicationRepository",
     "OtpRepository",
     "PushTokenRepository",

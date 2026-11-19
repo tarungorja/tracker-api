@@ -1,7 +1,7 @@
 [project]
 name = "tracker-api"
 version = "1.0.0"
-description = "FastAPI backend for the Hair Health Tracker"
+description = "FastAPI backend for the Medication Tracker"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
@@ -13,6 +13,7 @@ dependencies = [
     "google-auth>=2.30",
     "requests>=2.32",
     "truststore>=0.9",
+    "reportlab>=4.2",
 ]
 
 [project.optional-dependencies]

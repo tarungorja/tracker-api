@@ -1,5 +1,6 @@
 """Brevo transactional email over HTTPS (SMTP ports are often blocked)."""
 
+import base64
 import contextlib
 
 import httpx
@@ -12,7 +13,7 @@ BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email"
 
 
 class EmailDeliveryError(Exception):
-    """The OTP email could not be sent (missing config or provider failure)."""
+    """An email could not be sent (missing config or provider failure)."""
 
 
 class BrevoEmailClient:
@@ -20,13 +21,7 @@ class BrevoEmailClient:
         self._settings = settings
 
     async def send_otp(self, to: str, code: str, purpose: OtpPurpose) -> None:
-        s = self._settings
-        if not s.brevo_api_key:
-            raise EmailDeliveryError("Missing BREVO_API_KEY. Add it to your environment variables.")
-        if not s.email_from:
-            raise EmailDeliveryError("Missing EMAIL_FROM. Add it to your environment variables.")
-
-        app_name = s.app_name
+        app_name = self._settings.app_name
         minutes = round(OTP_TTL.total_seconds() / 60)
         action = "create your account" if purpose == "signup" else "sign in"
 
@@ -47,14 +42,43 @@ class BrevoEmailClient:
             f'<p style="margin:0;color:#71717a;font-size:13px">This code expires in {minutes} '
             "minutes. If you didn't request it, you can safely ignore this email.</p></div>"
         )
+        await self._send(to, f"{code} is your {app_name} verification code", html, text)
 
-        payload = {
+    async def send_report(
+        self,
+        to: str,
+        subject: str,
+        html: str,
+        text: str,
+        attachment: tuple[str, bytes] | None = None,
+    ) -> None:
+        """An adherence report, optionally with a file attached as (filename, bytes)."""
+        await self._send(to, subject, html, text, attachment)
+
+    async def _send(
+        self,
+        to: str,
+        subject: str,
+        html: str,
+        text: str,
+        attachment: tuple[str, bytes] | None = None,
+    ) -> None:
+        s = self._settings
+        if not s.brevo_api_key:
+            raise EmailDeliveryError("Missing BREVO_API_KEY. Add it to your environment variables.")
+        if not s.email_from:
+            raise EmailDeliveryError("Missing EMAIL_FROM. Add it to your environment variables.")
+
+        payload: dict[str, object] = {
             "sender": {"name": s.email_sender_name, "email": s.email_from},
             "to": [{"email": to}],
-            "subject": f"{code} is your {app_name} verification code",
+            "subject": subject,
             "htmlContent": html,
             "textContent": text,
         }
+        if attachment:
+            name, content = attachment
+            payload["attachment"] = [{"name": name, "content": base64.b64encode(content).decode()}]
         headers = {
             "api-key": s.brevo_api_key,
             "content-type": "application/json",
