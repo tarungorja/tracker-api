@@ -1,7 +1,7 @@
 import re
 from typing import Annotated
 
-from pydantic import AfterValidator, StringConstraints, field_validator
+from pydantic import AfterValidator, Field, StringConstraints, field_validator
 
 from app.core.constants import OTP_LENGTH, OtpPurpose
 from app.schemas.common import CamelModel, OkResponse
@@ -31,6 +31,8 @@ class OtpVerifyInput(CamelModel):
     email: Email
     purpose: OtpPurpose
     code: str
+    use_refresh_token: bool = False
+    """Opt in to a short-lived access token plus a rotating refresh token."""
 
     @field_validator("code")
     @classmethod
@@ -47,6 +49,18 @@ class UserView(CamelModel):
 
 
 class VerifyOtpResponse(OkResponse):
+    """Returned when a session starts or is refreshed."""
+
     user: UserView
     # Also set as an HttpOnly cookie; returned for non-browser clients using Bearer auth.
     token: str
+    # Only with refresh tokens: send it to POST /auth/refresh before `access_expires_at`
+    # (or after a 401). Also set as an HttpOnly cookie.
+    refresh_token: str | None = None
+    access_expires_at: str | None = None
+
+
+class RefreshInput(CamelModel):
+    """Browsers send the refresh cookie instead; non-browser clients put the token here."""
+
+    refresh_token: str | None = Field(default=None, min_length=1, max_length=512)

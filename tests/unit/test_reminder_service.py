@@ -127,3 +127,10 @@ def test_an_exception_from_push_counts_as_a_failure_and_releases_the_claim():
     result = run(service.send_due(NOW))
     assert result.failures == 1
     assert sent.claimed == set()
+
+
+def test_dose_reminders_leave_out_the_android_app_which_schedules_its_own():
+    service, _, _, push = build([med_doc(USER, "Minoxidil", ["10:00 AM"])])
+    run(service.send_due(NOW))
+    assert push.include_native == [False]  # the push to the user skips native tokens
+    assert service._push_tokens.distinct_calls == [False]  # and so does the user lookup

@@ -24,6 +24,9 @@ class Settings(BaseSettings):
 
     session_cookie_name: str = "session"
     session_ttl_days: int = 30
+    # Clients that opt in to refresh tokens get an access token that is only valid this long.
+    access_token_ttl_minutes: int = 15
+    refresh_cookie_name: str = "refresh_token"
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
     cookie_secure: bool | None = None
 
@@ -55,7 +58,12 @@ class Settings(BaseSettings):
 
     @property
     def session_ttl(self) -> timedelta:
+        """How long a session (and its refresh token) lasts without being used."""
         return timedelta(days=self.session_ttl_days)
+
+    @property
+    def access_token_ttl(self) -> timedelta:
+        return timedelta(minutes=self.access_token_ttl_minutes)
 
     @property
     def email_sender_name(self) -> str:

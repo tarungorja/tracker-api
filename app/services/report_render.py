@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from html import escape
 
+from app.schemas.statistics import StatisticsData
 from app.utils.numbers import round_half_up
 from app.utils.time import short_date_label
 
@@ -34,6 +35,8 @@ class Report:
     end_date: str
     days: tuple[DayReport, ...]
     medications: tuple[MedicationReport, ...]
+    statistics: StatisticsData | None = None
+    """The Statistics page numbers (last 120 days). Without them the PDF skips those sections."""
 
     @property
     def total(self) -> int:
@@ -70,9 +73,10 @@ def report_filename(report: Report) -> str:
 
 
 def _tone(value: int) -> str:
-    if value >= 90:
+    """Same thresholds as the Statistics page and the PDF: green from 80%, amber from 50%."""
+    if value >= 80:
         return "#16a34a"
-    return "#d97706" if value >= 60 else "#dc2626"
+    return "#d97706" if value >= 50 else "#dc2626"
 
 
 def render_text(report: Report, app_name: str, email: str) -> str:
@@ -93,6 +97,14 @@ def render_text(report: Report, app_name: str, email: str) -> str:
         f"  {m.name}: {m.taken}/{m.total} ({percent(m.taken, m.total)}%)"
         for m in report.medications
     ]
+    if report.statistics is not None:
+        stats = report.statistics
+        lines += [
+            "",
+            f"Last 120 days: {stats.overall_percent}% complete, current streak "
+            f"{stats.current_streak}, longest streak {stats.longest_streak}. "
+            "Charts and the heatmap are in the attached PDF.",
+        ]
     return "\n".join(lines)
 
 

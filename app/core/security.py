@@ -11,6 +11,10 @@ def generate_session_token() -> str:
     return secrets.token_hex(32)
 
 
+def generate_refresh_token() -> str:
+    return secrets.token_hex(32)
+
+
 def hash_token(token: str) -> str:
     """sha256 of the opaque session token (only the hash is stored)."""
     return hashlib.sha256(token.encode()).hexdigest()

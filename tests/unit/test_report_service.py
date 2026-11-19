@@ -10,6 +10,7 @@ from app.services.report_pdf import render_pdf
 from app.services.report_render import render_html, render_text
 from app.services.report_service import ReportService
 from app.services.schedule_service import ScheduleService
+from app.services.statistics_service import StatisticsService
 from tests.fakes import FakeDailyLogs, FakeEmail, FakeMedications, med_doc
 
 # Wednesday 2026-01-07, 10:00 IST (04:30 UTC). The last 7 days are Jan 1 - Jan 7.
@@ -36,6 +37,7 @@ class Setup:
         self.service = ReportService(
             self.logs,
             ScheduleService(self.meds, self.logs),
+            StatisticsService(self.logs, ScheduleService(self.meds, self.logs)),
             self.email,
             "Medication Tracker",
             self.cooldowns,
@@ -124,3 +126,10 @@ def test_send_has_a_cooldown_and_a_failed_send_does_not_start_it():
         run(s.service.send(USER, "me@example.com", "last7", NOW + timedelta(seconds=10)))
     run(s.service.send(USER, "me@example.com", "last7", NOW + timedelta(minutes=2)))
     assert len(s.email.reports) == 2
+
+
+def test_html_email_uses_the_statistics_page_thresholds():
+    from app.services.report_render import _tone
+
+    green, amber, rose = "#16a34a", "#d97706", "#dc2626"
+    assert [_tone(v) for v in (100, 80, 79, 50, 49, 0)] == [green, green, amber, amber, rose, rose]

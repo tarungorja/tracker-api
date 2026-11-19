@@ -2,11 +2,14 @@ import math
 from dataclasses import dataclass
 from datetime import datetime
 
+from bson import ObjectId
+
 from app.core.config import Settings
 from app.core.constants import (
     OTP_MAX_ATTEMPTS,
     OTP_RESEND_COOLDOWN,
     OTP_TTL,
+    REFRESH_REUSE_GRACE,
     OtpPurpose,
 )
 from app.core.exceptions import (
@@ -15,9 +18,11 @@ from app.core.exceptions import (
     ConflictError,
     NotFoundError,
     TooManyRequestsError,
+    UnauthorizedError,
 )
 from app.core.security import (
     generate_otp,
+    generate_refresh_token,
     generate_session_token,
     hash_otp,
     hash_token,
@@ -34,6 +39,8 @@ from app.integrations.email import BrevoEmailClient, EmailDeliveryError
 from app.schemas.auth import UserView
 from app.utils.time import utcnow
 
+_SESSION_ENDED = "Your session has ended. Sign in again."
+
 
 @dataclass(frozen=True)
 class AuthUser:
@@ -47,7 +54,11 @@ class AuthUser:
 class IssuedSession:
     token: str
     expires_at: datetime
+    """When the whole session ends (the refresh token's expiry, if there is one)."""
     user: UserView
+    refresh_token: str | None = None
+    access_expires_at: datetime | None = None
+    """Set only with refresh tokens: the access token is not accepted after this."""
 
 
 class AuthService:
@@ -99,7 +110,9 @@ class AuthService:
             await self._otps.delete(email, purpose)
             raise BadGatewayError(str(exc)) from exc
 
-    async def verify_otp(self, email: str, purpose: OtpPurpose, code: str) -> IssuedSession:
+    async def verify_otp(
+        self, email: str, purpose: OtpPurpose, code: str, use_refresh_token: bool = False
+    ) -> IssuedSession:
         otp = await self._otps.find(email, purpose)
         if otp is None or otp["expiresAt"] <= utcnow():
             if otp is not None:
@@ -138,11 +151,75 @@ class AuthService:
                 raise NotFoundError("No account found for this email.")
             user = existing_user
 
-        user_id = str(user["_id"])
+        return await self._start_session(str(user["_id"]), user["email"], use_refresh_token)
+
+    async def _start_session(
+        self, user_id: str, email: str, use_refresh_token: bool
+    ) -> IssuedSession:
+        moment = utcnow()
         token = generate_session_token()
-        expires_at = utcnow() + self._settings.session_ttl
-        await self._sessions.create(hash_token(token), user_id, expires_at)
-        return IssuedSession(token, expires_at, UserView(id=user_id, email=user["email"]))
+        session_end = moment + self._settings.session_ttl
+        user = UserView(id=user_id, email=email)
+
+        if not use_refresh_token:  # one long-lived token, as before
+            await self._sessions.create(hash_token(token), user_id, session_end)
+            return IssuedSession(token, session_end, user)
+
+        refresh_token = generate_refresh_token()
+        access_end = min(moment + self._settings.access_token_ttl, session_end)
+        await self._sessions.create(
+            hash_token(token),
+            user_id,
+            session_end,
+            access_expires_at=access_end,
+            refresh_hash=hash_token(refresh_token),
+        )
+        return IssuedSession(token, session_end, user, refresh_token, access_end)
+
+    async def refresh(self, refresh_token: str, now: datetime | None = None) -> IssuedSession:
+        """Trades a refresh token for a new access + refresh pair (the old pair stops working).
+
+        A refresh token works once. Replaying the one it replaced is treated as theft and ends the
+        session, except within a few seconds, which is just two tabs refreshing at the same time.
+        """
+        moment = now or utcnow()
+        old_hash = hash_token(refresh_token)
+        token = generate_session_token()
+        new_refresh = generate_refresh_token()
+        session_end = moment + self._settings.session_ttl  # sliding: active users stay signed in
+        access_end = moment + self._settings.access_token_ttl
+
+        session = await self._sessions.rotate(
+            old_hash, hash_token(token), hash_token(new_refresh), access_end, session_end, moment
+        )
+        if session is None:
+            await self._reject_stale_refresh(old_hash, moment)  # always raises
+            raise UnauthorizedError(_SESSION_ENDED)
+
+        user = await self._users.find_by_id(session["userId"])
+        if user is None:
+            await self._revoke(session["_id"])
+            raise UnauthorizedError(_SESSION_ENDED)
+        return IssuedSession(
+            token,
+            session_end,
+            UserView(id=str(user["_id"]), email=user["email"]),
+            new_refresh,
+            access_end,
+        )
+
+    async def _reject_stale_refresh(self, old_hash: str, moment: datetime) -> None:
+        replaced = await self._sessions.find_by_previous_refresh_hash(old_hash)
+        if replaced is not None:
+            refreshed_at = replaced.get("refreshedAt")
+            if refreshed_at is not None and moment - refreshed_at <= REFRESH_REUSE_GRACE:
+                raise UnauthorizedError("Your session was just refreshed. Try again.")
+            await self._revoke(replaced["_id"])  # an already-used token came back: assume theft
+        raise UnauthorizedError(_SESSION_ENDED)
+
+    async def _revoke(self, session_id: str | ObjectId) -> None:
+        await self._sessions.delete_by_id(session_id)
+        await self._push_tokens.delete_by_session(session_id)
 
     async def authenticate(self, token: str) -> AuthUser | None:
         session = await self._sessions.find_active_by_token_hash(hash_token(token))
@@ -153,8 +230,11 @@ class AuthService:
             return None
         return AuthUser(id=str(user["_id"]), email=user["email"], session_id=str(session["_id"]))
 
-    async def sign_out(self, token: str) -> None:
-        session = await self._sessions.delete_by_token_hash(hash_token(token))
+    async def sign_out(self, token: str | None, refresh_token: str | None = None) -> None:
+        """Ends this device's session, found by its access token or else its refresh token."""
+        session = await self._sessions.delete_by_token_hash(hash_token(token)) if token else None
+        if session is None and refresh_token:
+            session = await self._sessions.delete_by_refresh_hash(hash_token(refresh_token))
         # This device is signed out, so it must stop receiving this user's notifications.
         if session is not None:
             await self._push_tokens.delete_by_session(session["_id"])

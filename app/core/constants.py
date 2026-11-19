@@ -8,6 +8,12 @@ OTP_TTL = timedelta(minutes=10)
 OTP_MAX_ATTEMPTS = 5
 OTP_RESEND_COOLDOWN = timedelta(seconds=60)
 
+# Refresh tokens rotate on every use. Presenting the previous one again within this window is
+# treated as two tabs racing (rejected, harmless); later it is treated as theft (session revoked).
+REFRESH_REUSE_GRACE = timedelta(seconds=10)
+# The refresh cookie is only sent to the auth endpoints.
+REFRESH_COOKIE_PATH = "/api/v1/auth"
+
 # Wellness counters live in the same collection as dose logs, under this sentinel name.
 WELLNESS_LOG_KEY = "__wellness__"
 

@@ -57,7 +57,8 @@ Everything except `/health*`, `/auth/otp/*`, `/auth/signout` and `/cron/*` requi
 | Method & path | Replaces (Next.js) | Notes |
 |---|---|---|
 | `POST /auth/otp/request` | `requestOtp` | body `{email, purpose: "signup" \| "signin"}` |
-| `POST /auth/otp/verify` | `verifyOtp` | body `{email, purpose, code}`; sets the session cookie, also returns `token` |
+| `POST /auth/otp/verify` | `verifyOtp` | body `{email, purpose, code, useRefreshToken?}`; sets the session cookie, also returns `token`. With `useRefreshToken: true` the token is short-lived (15 min) and a `refreshToken` (HttpOnly cookie, path `/api/v1/auth`) is issued too |
+| `POST /auth/refresh` | - | refresh token from the cookie or body `{refreshToken}`; returns a new `token` + `refreshToken` and the old pair stops working. A refresh token works once: replaying a used one revokes the session (two tabs refreshing within 10 s are only rejected) |
 | `POST /auth/signout` | `signOut` | idempotent; drops this device's push tokens |
 | `GET /auth/me` | `getCurrentUser` | |
 | `DELETE /auth/me` | — | permanently erases the account and all its data (medications, dose logs, wellness, notes, push tokens, reminders, OTPs, sessions); clears the cookie |

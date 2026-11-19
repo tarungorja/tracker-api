@@ -63,7 +63,9 @@ class ReminderService:
 
     async def send_due(self, now: datetime | None = None) -> ReminderRunResult:
         now = now or utcnow()
-        user_ids = await self._push_tokens.distinct_user_ids()
+        # The Android app schedules its own reminders on the phone, so its tokens are left out
+        # (a push on top would show every reminder twice). Family reminders still reach it.
+        user_ids = await self._push_tokens.distinct_user_ids(include_native=False)
         result = ReminderRunResult(
             users_checked=len(user_ids), doses_due=0, notifications_sent=0, failures=0
         )
@@ -113,6 +115,7 @@ class ReminderService:
                             body=", ".join(slot.names),
                             tag=f"dose-{slot.date_key}-{slot.time}",
                         ),
+                        include_native=False,
                     )
                     result.notifications_sent += sent.sent
                     result.failures += sent.failed

@@ -19,6 +19,8 @@ async def ensure_indexes(db: AsyncDatabase) -> None:
 
     await db.sessions.create_index([("tokenHash", ASCENDING)], unique=True)
     await db.sessions.create_index([("userId", ASCENDING)])
+    await db.sessions.create_index([("refreshHash", ASCENDING)], sparse=True)
+    await db.sessions.create_index([("previousRefreshHash", ASCENDING)], sparse=True)
     await db.sessions.create_index([("expiresAt", ASCENDING)], expireAfterSeconds=0)
 
     await db.medications.create_index([("userId", ASCENDING)])

@@ -16,6 +16,8 @@ from app.core.tls import httpx_verify, requests_session
 
 FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 FCM_URL = "https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
+# Notification channel the Android app creates for dose reminders (src/lib/notifications).
+ANDROID_CHANNEL_ID = "dose-reminders"
 
 
 class FcmConfigError(Exception):
@@ -118,7 +120,13 @@ class FcmClient:
             return self._project_id, self._credentials.token
 
     async def send_many(self, tokens: list[str], data: dict[str, str]) -> list[SendOutcome]:
-        """Sends one data-only message per token. The service worker builds the notification."""
+        """Sends one message per token.
+
+        Browsers get the data and build the notification in the service worker. The native Android
+        app ignores data-only messages while open and drops their body in the background, so the
+        message also carries an `android.notification` block that the OS and expo-notifications
+        display; FCM applies it to Android registrations only.
+        """
         if not tokens:
             return []
         project_id, access_token = await asyncio.to_thread(self._access_token)
@@ -146,6 +154,16 @@ class FcmClient:
                 "token": token,
                 "data": data,
                 "webpush": {"headers": {"Urgency": "high", "TTL": "3600"}},
+                "android": {
+                    "priority": "HIGH",
+                    "ttl": "3600s",
+                    "notification": {
+                        "title": data.get("title", ""),
+                        "body": data.get("body", ""),
+                        "channel_id": ANDROID_CHANNEL_ID,
+                        "tag": data.get("tag", "reminder"),
+                    },
+                },
             }
         }
         try:

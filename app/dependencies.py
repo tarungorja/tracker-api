@@ -118,15 +118,25 @@ def get_statistics_service(db: DbDep, schedule: ScheduleServiceDep) -> Statistic
     return StatisticsService(DailyLogRepository(db), schedule)
 
 
+StatisticsServiceDep = Annotated[StatisticsService, Depends(get_statistics_service)]
+
+
 def get_wellness_service(db: DbDep) -> WellnessService:
     return WellnessService(DailyLogRepository(db))
 
 
 def get_report_service(
-    db: DbDep, settings: SettingsDep, schedule: ScheduleServiceDep
+    db: DbDep,
+    settings: SettingsDep,
+    schedule: ScheduleServiceDep,
+    statistics: StatisticsServiceDep,
 ) -> ReportService:
     return ReportService(
-        DailyLogRepository(db), schedule, BrevoEmailClient(settings), settings.app_name
+        DailyLogRepository(db),
+        schedule,
+        statistics,
+        BrevoEmailClient(settings),
+        settings.app_name,
     )
 
 
@@ -165,7 +175,6 @@ AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]
 MedicationServiceDep = Annotated[MedicationService, Depends(get_medication_service)]
 DoseServiceDep = Annotated[DoseService, Depends(get_dose_service)]
 TodayServiceDep = Annotated[TodayService, Depends(get_today_service)]
-StatisticsServiceDep = Annotated[StatisticsService, Depends(get_statistics_service)]
 WellnessServiceDep = Annotated[WellnessService, Depends(get_wellness_service)]
 FamilyServiceDep = Annotated[FamilyService, Depends(get_family_service)]
 ReportServiceDep = Annotated[ReportService, Depends(get_report_service)]

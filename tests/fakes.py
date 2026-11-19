@@ -312,27 +312,78 @@ class FakeSessions:
     def __init__(self) -> None:
         self.docs: list[dict[str, Any]] = []
 
-    async def create(self, token_hash: str, user_id: str, expires_at: datetime) -> None:
-        self.docs.append(
-            {
-                "_id": f"sess{next(_ids)}",
-                "tokenHash": token_hash,
-                "userId": user_id,
-                "expiresAt": expires_at,
-            }
-        )
+    async def create(
+        self,
+        token_hash: str,
+        user_id: str,
+        expires_at: datetime,
+        *,
+        access_expires_at: datetime | None = None,
+        refresh_hash: str | None = None,
+    ) -> None:
+        doc: dict[str, Any] = {
+            "_id": f"sess{next(_ids)}",
+            "tokenHash": token_hash,
+            "userId": user_id,
+            "expiresAt": expires_at,
+        }
+        if refresh_hash is not None:
+            doc["accessExpiresAt"] = access_expires_at
+            doc["refreshHash"] = refresh_hash
+        self.docs.append(doc)
 
     async def find_active_by_token_hash(self, token_hash: str) -> dict[str, Any] | None:
         now = datetime.now(UTC)
         return next(
-            (s for s in self.docs if s["tokenHash"] == token_hash and s["expiresAt"] > now), None
+            (
+                s
+                for s in self.docs
+                if s["tokenHash"] == token_hash
+                and s["expiresAt"] > now
+                and ("accessExpiresAt" not in s or s["accessExpiresAt"] > now)
+            ),
+            None,
         )
+
+    async def rotate(
+        self,
+        refresh_hash: str,
+        new_token_hash: str,
+        new_refresh_hash: str,
+        access_expires_at: datetime,
+        expires_at: datetime,
+        moment: datetime,
+    ) -> dict[str, Any] | None:
+        for s in self.docs:
+            if s.get("refreshHash") == refresh_hash and s["expiresAt"] > moment:
+                s.update(
+                    tokenHash=new_token_hash,
+                    accessExpiresAt=access_expires_at,
+                    refreshHash=new_refresh_hash,
+                    previousRefreshHash=refresh_hash,
+                    refreshedAt=moment,
+                    expiresAt=expires_at,
+                )
+                return s
+        return None
+
+    async def find_by_previous_refresh_hash(self, refresh_hash: str) -> dict[str, Any] | None:
+        return next((s for s in self.docs if s.get("previousRefreshHash") == refresh_hash), None)
 
     async def delete_by_token_hash(self, token_hash: str) -> dict[str, Any] | None:
         found = next((s for s in self.docs if s["tokenHash"] == token_hash), None)
         if found:
             self.docs.remove(found)
         return found
+
+    async def delete_by_refresh_hash(self, refresh_hash: str) -> dict[str, Any] | None:
+        found = next((s for s in self.docs if s.get("refreshHash") == refresh_hash), None)
+        if found:
+            self.docs.remove(found)
+        return found
+
+    async def delete_by_id(self, session_id: str) -> None:
+        self.docs = [s for s in self.docs if s["_id"] != session_id]
 
     async def delete_all_for_user(self, user_id: str) -> int:
         before = len(self.docs)
@@ -348,6 +399,7 @@ class FakePushTokens:
     def __init__(self, user_ids: list[str] | None = None) -> None:
         self.user_ids = user_ids or []
         self.deleted_sessions: list[str] = []
+        self.distinct_calls: list[bool] = []
 
     async def delete_by_session(self, session_id: str) -> None:
         self.deleted_sessions.append(session_id)
@@ -357,7 +409,8 @@ class FakePushTokens:
         self.user_ids = [u for u in self.user_ids if u != user_id]
         return removed
 
-    async def distinct_user_ids(self) -> list[str]:
+    async def distinct_user_ids(self, include_native: bool = True) -> list[str]:
+        self.distinct_calls.append(include_native)
         return self.user_ids
 
 
@@ -413,9 +466,13 @@ class FakePush:
     def __init__(self, result: PushSendResult | None = None) -> None:
         self.result = result or PushSendResult(sent=1, failed=0)
         self.calls: list[tuple[str, Any]] = []
+        self.include_native: list[bool] = []
 
-    async def send_to_user(self, user_id: str, payload: Any) -> PushSendResult:
+    async def send_to_user(
+        self, user_id: str, payload: Any, include_native: bool = True
+    ) -> PushSendResult:
         self.calls.append((str(user_id), payload))
+        self.include_native.append(include_native)
         return self.result
 
 

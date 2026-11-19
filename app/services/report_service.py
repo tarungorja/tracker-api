@@ -18,6 +18,7 @@ from app.services.report_render import (
     report_subject,
 )
 from app.services.schedule_service import ScheduleService
+from app.services.statistics_service import StatisticsService
 from app.utils.schedule import is_medication_due_on
 from app.utils.time import (
     add_days_to_key,
@@ -44,12 +45,14 @@ class ReportService:
         self,
         logs: DailyLogRepository,
         schedule: ScheduleService,
+        statistics: StatisticsService,
         email: BrevoEmailClient,
         app_name: str,
         last_emailed: dict[str, datetime] | None = None,
     ) -> None:
         self._logs = logs
         self._schedule = schedule
+        self._statistics = statistics
         self._email = email
         self._app_name = app_name
         self._last_emailed = _last_emailed if last_emailed is None else last_emailed
@@ -57,7 +60,8 @@ class ReportService:
     async def build(
         self, user_id: str, period: ReportPeriod, now: datetime | None = None
     ) -> Report:
-        today_key, now_minutes = now_context(now or utcnow())
+        moment = now or utcnow()
+        today_key, now_minutes = now_context(moment)
         start_key, end_key = resolve_period(period, today_key)
 
         meds = await self._schedule.medication_views(user_id, only_enabled=True)
@@ -102,7 +106,8 @@ class ReportService:
             for name, (total, taken) in sorted(per_med.items())
             if total > 0
         )
-        return Report(start_key, end_key, tuple(days), medications)
+        statistics = await self._statistics.get(user_id, moment)
+        return Report(start_key, end_key, tuple(days), medications, statistics)
 
     async def render_download(
         self, user_id: str, email: str, period: ReportPeriod, now: datetime | None = None

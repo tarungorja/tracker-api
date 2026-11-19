@@ -99,7 +99,12 @@ class World:
             FakeActivity(),
         )
         o[deps.get_report_service] = lambda: ReportService(
-            self.logs, self.schedule, self.email, "Medication Tracker", {}
+            self.logs,
+            self.schedule,
+            StatisticsService(self.logs, self.schedule),
+            self.email,
+            "Medication Tracker",
+            {},
         )
         o[deps.get_push_service] = lambda: self.push
         o[deps.get_reminder_service] = lambda: self.reminder
@@ -427,3 +432,63 @@ def test_report_rejects_unknown_periods_and_needs_a_session(api, anon):
     assert api.post("/api/v1/reports/send", json={"period": "custom"}).status_code == 422
     assert anon.get("/api/v1/reports/download").status_code == 401
     assert anon.post("/api/v1/reports/send", json={}).status_code == 401
+
+
+# ---- refresh tokens ------------------------------------------------------------------------
+
+
+def _sign_in_with_refresh(anon, world):
+    anon.post("/api/v1/auth/otp/request", json={"email": "me@example.com", "purpose": "signup"})
+    code = world.email.sent[-1][1]
+    return anon.post(
+        "/api/v1/auth/otp/verify",
+        json={
+            "email": "me@example.com",
+            "purpose": "signup",
+            "code": code,
+            "useRefreshToken": True,
+        },
+    )
+
+
+def test_refresh_sign_in_sets_a_scoped_refresh_cookie(anon, world):
+    verify = _sign_in_with_refresh(anon, world)
+    body = verify.json()
+    assert body["refreshToken"] and body["accessExpiresAt"] and body["token"]
+
+    cookies = verify.headers.get_list("set-cookie")
+    session = next(c for c in cookies if c.startswith("session="))
+    refresh = next(c for c in cookies if c.startswith("refresh_token="))
+    assert "Path=/;" in session or session.endswith("Path=/")
+    assert "HttpOnly" in refresh and "Path=/api/v1/auth" in refresh
+
+
+def test_refresh_endpoint_rotates_the_cookies(anon, world):
+    first = _sign_in_with_refresh(anon, world).json()
+
+    out = anon.post("/api/v1/auth/refresh")  # the refresh cookie is in the jar
+    assert out.status_code == 200
+    body = out.json()
+    assert body["token"] != first["token"] and body["refreshToken"] != first["refreshToken"]
+    assert anon.get("/api/v1/auth/me").status_code == 200
+
+    # The old refresh token, sent in the body (as a non-browser client would), is rejected.
+    other = TestClient(anon.app)
+    replay = other.post("/api/v1/auth/refresh", json={"refreshToken": first["refreshToken"]})
+    assert replay.status_code == 401
+
+
+def test_refresh_without_a_token_is_unauthorized(anon):
+    assert anon.post("/api/v1/auth/refresh").status_code == 401
+    assert anon.post("/api/v1/auth/refresh", json={"refreshToken": "nope"}).status_code == 401
+
+
+def test_signout_clears_both_cookies_and_revokes_the_refresh_token(anon, world):
+    first = _sign_in_with_refresh(anon, world).json()
+    out = anon.post("/api/v1/auth/signout")
+    cleared = " ".join(out.headers.get_list("set-cookie"))
+    assert "session=" in cleared and "refresh_token=" in cleared
+    replay = TestClient(anon.app).post(
+        "/api/v1/auth/refresh", json={"refreshToken": first["refreshToken"]}
+    )
+    assert replay.status_code == 401

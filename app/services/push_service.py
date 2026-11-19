@@ -41,11 +41,16 @@ class PushService:
     async def remove_token(self, user_id: str, token: str) -> None:
         await self._push_tokens.delete_for_user(token, user_id)
 
-    async def send_to_user(self, user_id: str | ObjectId, payload: PushPayload) -> PushSendResult:
-        """Sends a web push to every browser still signed in as this user."""
+    async def send_to_user(
+        self, user_id: str | ObjectId, payload: PushPayload, include_native: bool = True
+    ) -> PushSendResult:
+        """Sends a push to every device still signed in as this user.
+
+        `include_native=False` skips the Android app, which schedules its own dose reminders.
+        """
         session_ids = await self._sessions.active_ids_for_user(user_id)
         await self._push_tokens.delete_orphaned(user_id, session_ids)
-        tokens = await self._push_tokens.tokens_for_user(user_id, session_ids)
+        tokens = await self._push_tokens.tokens_for_user(user_id, session_ids, include_native)
         if not tokens:
             return PushSendResult(sent=0, failed=0)
 
